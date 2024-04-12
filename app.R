@@ -119,12 +119,9 @@ ui <- page_fluid(
   br(),
   layout_column_wrap(
     height = 1000,
-    col_widths = 12,
-    fillable = TRUE,
-    layout_column_wrap(
-      width = 1/2,
-      col_width = 6,
-      heights_equal = "row",
+    layout_columns(
+      col_widths = c(6, 6, 16),
+      row_heights = c(1, 5),
       value_box(
           title = "Hours since last earthquake",
           value = as.numeric(hours_last),
