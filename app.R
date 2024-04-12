@@ -1,38 +1,30 @@
 ## Based on the Quarto Dashboard for Earthquakes available here:
 ## https://raw.githubusercontent.com/cwickham/quakes/main/quakes.qmd
 
----
-title: Recent Earthquakes in Aotearoa New Zealand
-author: Of Weak Intensity or Greater
-format: 
-  dashboard:
-    orientation: columns
-    theme: yeti
----
+# Load libraries for Shiny app and styling
+library(shiny)
+library(bslib)
+library(bsicons)
 
-```{r}
-#| message: false
+# Load analysis libraries
 library(tidyverse)
-library(httr2)
+# library(httr2) # Custom shim
 library(sf)
 library(leaflet)
 library(gt)
-```
 
-```{r}
-# Get data from GeoNet
-# MMI = 3, weak or above
-req <- request("https://api.geonet.org.nz/quake?MMI=3") |> 
-  req_headers("Accept"="application/vnd.geo+json")
-resp <- req_perform(req)
-recent_quakes <- resp |> 
-  resp_body_string() |> 
-  st_read(quiet = TRUE)
-```
 
-```{r}
-# Prettier times and dates
-recent_quakes <- recent_quakes |> 
+# Custom shim to avoid httr2 functionality
+shim_request = function(endpoint = "https://api.geonet.org.nz/quake?MMI=3") {
+  
+  readLines(url(endpoint)) |>
+    sf::st_read(quiet = TRUE)
+}
+
+recent_quakes_data <- shim_request()
+
+# Obtain data
+recent_quakes <- recent_quakes_data |> 
   arrange(desc(time)) |> 
   mutate(
     time = force_tz(time, "Pacific/Auckland"),
@@ -44,13 +36,12 @@ recent_quakes <- recent_quakes |>
       TRUE ~ paste0(days_ago, " days ago")
     )
   )
+
 now_nz <- now(tzone = "Pacific/Auckland")
 last_24 <- recent_quakes |> filter(time > (now_nz - hours(24)))
 n_24 <- nrow(last_24)
 hours_last <- round(difftime(now_nz, recent_quakes$time[1], units = "hours"))
-```
 
-```{r}
 mag_pal <- colorBin("inferno", domain = 1:8, bins = c(0:5, 8))
 
 quake_map <- recent_quakes |> 
@@ -64,26 +55,21 @@ quake_map <- recent_quakes |>
       date(time), pretty_time, "<br/>",
       "Magnitude:", round(magnitude, 1), "<br/>", 
       "Depth:",  round(depth), " km"
-      ) |> map(html),
+    ) |> map(html),
     labelOptions = c(textsize = "15px")) |> 
   addLegend(title = "Magnitude", colors = mag_pal(0:5), labels = c("<1", 1:4,">5")) |> 
   addTiles("http://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", options = tileOptions(minZoom = 5, maxZoom = 10)) 
-```
 
-```{r}
+
 mag_hist <- recent_quakes |> 
   ggplot(aes(x = magnitude)) +
   geom_histogram()
-```
 
-```{r}
 timeline <- recent_quakes |> 
   ggplot(aes(x = time, y = 0)) +
   geom_point()
-```
 
 
-```{r}
 # Create n most recent table
 n <- 10
 top_n <- recent_quakes |> 
@@ -116,44 +102,57 @@ top_n_table <- top_n |>
     title = md("**Last 10 Earthquakes**")
   ) |> 
   tab_source_note(
-    source_note = md(paste("Retrieved from the [GeoNet API](https://api.geonet.org.nz/) at", format(now_nz, "%Y/%m/%d %H:%M %Z")))
+    source_note = md(
+      paste(
+        "Retrieved from the [GeoNet API](https://api.geonet.org.nz/) at",
+        format(now_nz, "%Y/%m/%d %H:%M %Z")
+      )
+    )
   )
-```
 
-## Column
-
-### Row 
-
-```{r}
-#| component: valuebox
-#| title: Hours since last earthquake
-list(
-  icon = "stopwatch",
-  color = "primary",
-  value = as.numeric(hours_last)
+ui <- page_fluid(
+  theme = bs_theme(bootswatch = "yeti"),
+  div(
+    class = "navbar navbar-static-top primary bg-primary",
+    div("Recent Earthquakes in Aotearoa New Zealand", class = "container-fluid")
+  ),
+  br(),
+  layout_column_wrap(
+    height = 1000,
+    col_widths = 12,
+    fillable = TRUE,
+    layout_column_wrap(
+      width = 1/2,
+      col_width = 6,
+      heights_equal = "row",
+      value_box(
+          title = "Hours since last earthquake",
+          value = as.numeric(hours_last),
+          showcase = bs_icon("stopwatch"),
+          theme = "primary"
+        ),
+      value_box(
+        title = "Earthquakes in the last 24 hours",
+        value = n_24,
+        showcase = bs_icon("activity"),
+        theme = "secondary"
+      ),
+      card(
+        full_screen = TRUE,
+        top_n_table
+      ),
+    ),
+    card(
+      full_screen = TRUE,
+      min_height = 800,
+      card_header("100 Most Recent Earthquakes"),
+      card_body(quake_map)
+    )
+  )
 )
-```
 
-```{r}
-#| component: valuebox
-#| title: Earthquakes in the last 24 hours
-list(
-  icon = "activity",
-  color = "secondary",
-  value = n_24
-)
-```
+# Disable server functionality
+server <- function(input, output) {}
 
-### Row
+shinyApp(ui, server)
 
-```{r}
-top_n_table
-```
-
-
-## Column
-
-```{r}
-#| title: 100 Most Recent Earthquakes
-quake_map
-```
